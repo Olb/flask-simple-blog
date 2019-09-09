@@ -17,7 +17,7 @@ class Todo(db.Model):
     description = db.Column(db.String(), nullable=False)
     completed = db.Column(db.Boolean, default=False)
     list_id = db.Column(db.Integer, db.ForeignKey(
-        'todolists.id'), nullable=False)
+        'todolists.id', ondelete='CASCADE'), nullable=False)
 
     def __repr__(self):
         return f'<Todo {self.id} {self.description}>'
@@ -28,7 +28,8 @@ class TodoList(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(), nullable=False)
     completed = db.Column(db.Boolean, default=False)
-    todos = db.relationship('Todo', backref='list', lazy=True)
+    todos = db.relationship('Todo', backref='list',
+                            lazy=True, cascade="all, delete-orphan", passive_deletes=True)
 
 
 @app.route('/')
@@ -38,7 +39,7 @@ def index():
 
 @app.route('/lists/<list_id>')
 def get_todos_list(list_id):
-    return render_template('index.html', active_list=TodoList.query.get(list_id), lists=TodoList.query.all(), todos=Todo.query.filter_by(list_id=list_id).order_by('id').all())
+    return render_template('index.html', active_list=TodoList.query.get(list_id), lists=TodoList.query.order_by('id').all(), todos=Todo.query.filter_by(list_id=list_id).order_by('id').all())
 
 
 @app.route('/todos/create', methods=['POST'])
@@ -110,3 +111,34 @@ def create_list():
         abort(400)
     else:
         return jsonify(body)
+
+
+@app.route('/lists/<list_id>/set-completed', methods=['POST'])
+def set_completed_list(list_id):
+    try:
+        completed = request.get_json()['completed']
+        list = TodoList.query.get(list_id)
+        list.completed = completed
+
+        for todo in list.todos:
+            todo.completed = completed
+        db.session.commit()
+    except:
+        db.session.rollback()
+    finally:
+        db.session.close()
+    return redirect(url_for('index'))
+
+
+@app.route('/lists/<list_id>/set-deleted', methods=['DELETE'])
+def set_deleted_list(list_id):
+    try:
+        TodoList.query.filter_by(id=list_id).delete()
+        db.session.commit()
+        print('done')
+    except:
+        print('rollback')
+        db.session.rollback()
+    finally:
+        db.session.close()
+    return jsonify({'success': True})
